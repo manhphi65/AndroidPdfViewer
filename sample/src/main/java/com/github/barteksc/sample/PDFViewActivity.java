@@ -17,17 +17,19 @@ package com.github.barteksc.sample;
 
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Bundle;
 import android.provider.OpenableColumns;
-import android.support.annotation.NonNull;
-import android.support.v4.app.ActivityCompat;
-import android.support.v4.content.ContextCompat;
-import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
 
 import com.github.barteksc.pdfviewer.PDFView;
 import com.github.barteksc.pdfviewer.listener.OnLoadCompleteListener;
@@ -37,57 +39,24 @@ import com.github.barteksc.pdfviewer.scroll.DefaultScrollHandle;
 import com.github.barteksc.pdfviewer.util.FitPolicy;
 import com.shockwave.pdfium.PdfDocument;
 
-import org.androidannotations.annotations.AfterViews;
-import org.androidannotations.annotations.EActivity;
-import org.androidannotations.annotations.NonConfigurationInstance;
-import org.androidannotations.annotations.OnActivityResult;
-import org.androidannotations.annotations.OptionsItem;
-import org.androidannotations.annotations.OptionsMenu;
-import org.androidannotations.annotations.ViewById;
-
+import java.io.InputStream;
 import java.util.List;
 
-@EActivity(R.layout.activity_main)
-@OptionsMenu(R.menu.options)
 public class PDFViewActivity extends AppCompatActivity implements OnPageChangeListener, OnLoadCompleteListener,
         OnPageErrorListener {
 
     private static final String TAG = PDFViewActivity.class.getSimpleName();
 
     private final static int REQUEST_CODE = 42;
-    public static final int PERMISSION_CODE = 42042;
-
     public static final String SAMPLE_FILE = "sample.pdf";
-    public static final String READ_EXTERNAL_STORAGE = "android.permission.READ_EXTERNAL_STORAGE";
 
-    @ViewById
     PDFView pdfView;
 
-    @NonConfigurationInstance
     Uri uri;
 
-    @NonConfigurationInstance
     Integer pageNumber = 0;
 
     String pdfFileName;
-
-    @OptionsItem(R.id.pickFile)
-    void pickFile() {
-        int permissionCheck = ContextCompat.checkSelfPermission(this,
-                READ_EXTERNAL_STORAGE);
-
-        if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(
-                    this,
-                    new String[]{READ_EXTERNAL_STORAGE},
-                    PERMISSION_CODE
-            );
-
-            return;
-        }
-
-        launchPicker();
-    }
 
     void launchPicker() {
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
@@ -100,7 +69,28 @@ public class PDFViewActivity extends AppCompatActivity implements OnPageChangeLi
         }
     }
 
-    @AfterViews
+    @Override
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        pdfView = findViewById(R.id.pdfView);
+        displayFromAsset(SAMPLE_FILE);
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        getMenuInflater().inflate(R.menu.options, menu);
+        return super.onCreateOptionsMenu(menu);
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(@NonNull MenuItem item) {
+        if (item.getItemId() == R.id.pickFile) {
+            launchPicker();
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
     void afterViews() {
         pdfView.setBackgroundColor(Color.LTGRAY);
         if (uri != null) {
@@ -128,7 +118,16 @@ public class PDFViewActivity extends AppCompatActivity implements OnPageChangeLi
 
     private void displayFromUri(Uri uri) {
         pdfFileName = getFileName(uri);
-
+        @Nullable InputStream dataInputStream = null;
+        try {
+            dataInputStream = getContentResolver().openInputStream(uri);
+        }catch (Exception e) {
+            e.printStackTrace();
+        }
+        if (dataInputStream == null) {
+            Toast.makeText(this, "Can not open pdf file from uri :\n" + uri.toString(), Toast.LENGTH_LONG).show();
+            return;
+        }
         pdfView.fromUri(uri)
                 .defaultPage(pageNumber)
                 .onPageChange(this)
@@ -140,7 +139,14 @@ public class PDFViewActivity extends AppCompatActivity implements OnPageChangeLi
                 .load();
     }
 
-    @OnActivityResult(REQUEST_CODE)
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        if (requestCode == REQUEST_CODE) {
+             onResult(resultCode, data);
+        }
+        super.onActivityResult(requestCode, resultCode, data);
+    }
+
     public void onResult(int resultCode, Intent intent) {
         if (resultCode == RESULT_OK) {
             uri = intent.getData();
@@ -160,7 +166,8 @@ public class PDFViewActivity extends AppCompatActivity implements OnPageChangeLi
             Cursor cursor = getContentResolver().query(uri, null, null, null, null);
             try {
                 if (cursor != null && cursor.moveToFirst()) {
-                    result = cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME));
+                    int displayNameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                    result = cursor.getString(displayNameIndex);
                 }
             } finally {
                 if (cursor != null) {
@@ -197,24 +204,6 @@ public class PDFViewActivity extends AppCompatActivity implements OnPageChangeLi
 
             if (b.hasChildren()) {
                 printBookmarksTree(b.getChildren(), sep + "-");
-            }
-        }
-    }
-
-    /**
-     * Listener for response to user permission request
-     *
-     * @param requestCode  Check that permission request code matches
-     * @param permissions  Permissions that requested
-     * @param grantResults Whether permissions granted
-     */
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String permissions[],
-                                           @NonNull int[] grantResults) {
-        if (requestCode == PERMISSION_CODE) {
-            if (grantResults.length > 0
-                    && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                launchPicker();
             }
         }
     }
